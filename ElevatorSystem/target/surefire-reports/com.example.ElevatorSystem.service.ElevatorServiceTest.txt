@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: com.example.ElevatorSystem.service.ElevatorServiceTest
--------------------------------------------------------------------------------
-Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.079 s -- in com.example.ElevatorSystem.service.ElevatorServiceTest

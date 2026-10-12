@@ -1,0 +1,12 @@
+:root {
+  color-scheme: light;
+  --background: #f7f6f0;
+  --foreground: #20291f;
+}
+
+* { box-sizing: border-box; }
+html, body { min-height: 100%; margin: 0; }
+body { color: var(--foreground); background: var(--background); font-family: Arial, Helvetica, sans-serif; -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #8da17f; outline-offset: 2px; }
+::selection { color: #fff; background: #64785d; }

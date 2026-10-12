@@ -1,0 +1,9 @@
+**/target/
+**/node_modules/
+**/.next/
+**/out/
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
