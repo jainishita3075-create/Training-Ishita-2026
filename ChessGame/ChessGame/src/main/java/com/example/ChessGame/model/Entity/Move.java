@@ -1,7 +1,7 @@
 package com.example.ChessGame.model.Entity;
 
-import com.example.ChessGame.model.Enum.MoveType;
 import com.example.ChessGame.model.Enum.PieceType;
+import com.example.ChessGame.model.Enum.MoveType;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
@@ -14,6 +14,7 @@ public class Move {
     private final Piece capturedPiece;
     private final MoveType moveType;
     private final PieceType promotionType;
+
 }
 
 // also helpful to maintain history, in undo operation

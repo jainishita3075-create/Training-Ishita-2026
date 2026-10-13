@@ -4,6 +4,10 @@ import com.example.ChessGame.model.Enum.Color;
 import com.example.ChessGame.model.Enum.MoveType;
 import com.example.ChessGame.model.Enum.PieceType;
 import com.example.ChessGame.service.PieceFactory;
+import com.example.ChessGame.model.rules.CastlingRule;
+import com.example.ChessGame.model.rules.CheckRule;
+import com.example.ChessGame.model.rules.EnPassantRule;
+import com.example.ChessGame.model.rules.PromotionRule;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +27,10 @@ public class Board {
     private Position enPassantTarget;
     private Position enPassantPawnPosition;
     private Color enPassantPawnColor;
+    private final EnPassantRule enPassantRule = new EnPassantRule();
+    private final CastlingRule castlingRule = new CastlingRule();
+    private final CheckRule checkRule = new CheckRule();
+    private final PromotionRule promotionRule = new PromotionRule();
 
     public Board() {
         initializeBoard();
@@ -129,7 +137,8 @@ public class Board {
             return false;
         }
 
-        boolean castling = isCastlingMove(movingPiece, move);
+        boolean castling = castlingRule.isCastlingMove(
+                movingPiece, move.getFrom(), move.getTo());
         boolean kingSideCastle = move.getTo().getColumn() == 6;
 
         if (castling
@@ -143,8 +152,7 @@ public class Board {
 
         Piece promotionPiece = getPromotionPiece(movingPiece, move);
 
-        if (promotionPiece == null
-                && isPromotionMove(movingPiece, move.getTo())) {
+        if (promotionPiece == null && promotionRule.appliesTo(movingPiece, move.getTo())) {
             return false;
         }
 
@@ -231,7 +239,7 @@ public class Board {
     }
 
     private Piece getPromotionPiece(Piece movingPiece, Move move) {
-        if (!isPromotionMove(movingPiece, move.getTo())) {
+        if (!promotionRule.appliesTo(movingPiece, move.getTo())) {
             return movingPiece;
         }
 
@@ -240,35 +248,13 @@ public class Board {
                     "Board must be set up before making moves.");
         }
 
-        PieceType type = move.getPromotionType();
-
-        // If no choice is supplied, promote to a queen.
-        if (type == null) {
-            type = PieceType.QUEEN;
-        }
-
-        if (type != PieceType.QUEEN
-                && type != PieceType.ROOK
-                && type != PieceType.BISHOP
-                && type != PieceType.KNIGHT) {
-            return null;
-        }
-
-        return pieceFactory.createPiece(type, movingPiece.getColor());
-    }
-
-    private boolean isPromotionMove(Piece piece, Position to) {
-        return piece.getPieceType() == PieceType.PAWN
-                && ((piece.getColor() == Color.WHITE && to.getRow() == 7)
-                || (piece.getColor() == Color.BLACK && to.getRow() == 0));
+        return promotionRule.promote(
+                pieceFactory, movingPiece, move.getPromotionType());
     }
 
     private boolean isCastlingMove(Piece piece, Move move) {
-        return piece.getPieceType() == PieceType.KING
-                && move.getFrom().getRow() == move.getTo().getRow()
-                && Math.abs(
-                move.getFrom().getColumn()
-                        - move.getTo().getColumn()) == 2;
+        return castlingRule.isCastlingMove(
+                piece, move.getFrom(), move.getTo());
     }
 
     private void updateCastlingRights(
@@ -318,25 +304,9 @@ public class Board {
     }
 
     public boolean isEnPassantMove(Position from, Position to) {
-        if (from == null || to == null
-                || enPassantTarget == null
-                || enPassantPawnPosition == null
-                || !to.equals(enPassantTarget)
-                || !getSquare(to).isEmpty()) {
-            return false;
-        }
-
-        Piece movingPiece = getSquare(from).getPiece();
-        Piece vulnerablePawn =
-                getSquare(enPassantPawnPosition).getPiece();
-
-        return movingPiece != null
-                && movingPiece.getPieceType() == PieceType.PAWN
-                && vulnerablePawn != null
-                && vulnerablePawn.getPieceType() == PieceType.PAWN
-                && vulnerablePawn.getColor() != movingPiece.getColor()
-                && vulnerablePawn.getColor() == enPassantPawnColor
-                && Math.abs(from.getColumn() - to.getColumn()) == 1;
+        return enPassantRule.isLegal(
+                this, from, to, enPassantTarget,
+                enPassantPawnPosition, enPassantPawnColor);
     }
 
     public Piece getEnPassantCapturedPiece(Position from, Position to) {
@@ -395,90 +365,18 @@ public class Board {
     }
 
     private boolean canCastle(Color color, boolean kingSide) {
-        int row = color == Color.WHITE ? 0 : 7;
-
-        boolean kingMoved =
-                color == Color.WHITE ? whiteKingMoved : blackKingMoved;
-
+        boolean kingMoved = color == Color.WHITE
+                ? whiteKingMoved : blackKingMoved;
         boolean rookMoved;
-        int rookColumn;
 
-        if (color == Color.WHITE && kingSide) {
-            rookMoved = whiteKingRookMoved;
-            rookColumn = 7;
-        } else if (color == Color.WHITE) {
-            rookMoved = whiteQueenRookMoved;
-            rookColumn = 0;
-        } else if (kingSide) {
-            rookMoved = blackKingRookMoved;
-            rookColumn = 7;
+        if (color == Color.WHITE) {
+            rookMoved = kingSide ? whiteKingRookMoved : whiteQueenRookMoved;
         } else {
-            rookMoved = blackQueenRookMoved;
-            rookColumn = 0;
+            rookMoved = kingSide ? blackKingRookMoved : blackQueenRookMoved;
         }
 
-        if (kingMoved || rookMoved || isKingInCheck(color)) {
-            return false;
-        }
-
-        Piece king = getSquare(new Position(row, 4)).getPiece();
-        Piece rook = getSquare(new Position(row, rookColumn)).getPiece();
-
-        if (king == null || king.getPieceType() != PieceType.KING
-                || king.getColor() != color
-                || rook == null || rook.getPieceType() != PieceType.ROOK
-                || rook.getColor() != color) {
-            return false;
-        }
-
-        int transitColumn = kingSide ? 5 : 3;
-        int destinationColumn = kingSide ? 6 : 2;
-
-        if (!getSquare(new Position(row, transitColumn)).isEmpty()
-                || !getSquare(new Position(row, destinationColumn)).isEmpty()) {
-            return false;
-        }
-
-        if (!kingSide && !getSquare(new Position(row, 1)).isEmpty()) {
-            return false;
-        }
-
-        Color opponent = color == Color.WHITE ? Color.BLACK : Color.WHITE;
-
-        BoardState beforeCheck = saveState();
-
-        Position kingStart = new Position(row, 4);
-        Position transit = new Position(row, transitColumn);
-
-        getSquare(kingStart).setPiece(null);
-        getSquare(transit).setPiece(king);
-
-        boolean transitIsSafe = !isSquareAttacked(transit, opponent);
-        restoreState(beforeCheck);
-
-        if (!transitIsSafe) {
-            return false;
-        }
-
-        beforeCheck = saveState();
-
-        Position destination = new Position(row, destinationColumn);
-        int rookDestinationColumn = kingSide ? 5 : 3;
-        Position rookStart = new Position(row, rookColumn);
-        Position rookDestination =
-                new Position(row, rookDestinationColumn);
-
-        getSquare(kingStart).setPiece(null);
-        getSquare(destination).setPiece(king);
-        getSquare(rookStart).setPiece(null);
-        getSquare(rookDestination).setPiece(rook);
-
-        boolean destinationIsSafe =
-                !isSquareAttacked(destination, opponent);
-
-        restoreState(beforeCheck);
-
-        return destinationIsSafe;
+        return castlingRule.canCastle(
+                this, color, kingSide, kingMoved, rookMoved);
     }
 
     public boolean hasAnyLegalMove(Color color) {
@@ -535,7 +433,7 @@ public class Board {
         return false;
     }
 
-    private BoardState saveState() {
+    public BoardState saveState() {
         Piece[][] pieces = new Piece[8][8];
 
         for (int row = 0; row < 8; row++) {
@@ -559,7 +457,7 @@ public class Board {
         );
     }
 
-    private void restoreState(BoardState state) {
+    public void restoreState(BoardState state) {
         for (int row = 0; row < 8; row++) {
             for (int column = 0; column < 8; column++) {
                 squares[row][column].setPiece(
@@ -579,7 +477,7 @@ public class Board {
         enPassantPawnColor = state.enPassantPawnColor;
     }
 
-    private static class BoardState {
+    public static class BoardState {
         private final Piece[][] pieces;
         private final boolean whiteKingMoved;
         private final boolean blackKingMoved;
@@ -616,115 +514,6 @@ public class Board {
     }
 
     public boolean isKingInCheck(Color kingColor) {
-        Position kingPosition = null;
-
-        for (int row = 0; row < 8; row++) {
-            for (int column = 0; column < 8; column++) {
-                Piece piece = squares[row][column].getPiece();
-
-                if (piece != null
-                        && piece.getColor() == kingColor
-                        && piece.getPieceType() == PieceType.KING) {
-                    kingPosition = new Position(row, column);
-                    break;
-                }
-            }
-
-            if (kingPosition != null) {
-                break;
-            }
-        }
-
-        if (kingPosition == null) {
-            return true;
-        }
-
-        Color attackingColor =
-                kingColor == Color.WHITE ? Color.BLACK : Color.WHITE;
-
-        return isSquareAttacked(kingPosition, attackingColor);
-    }
-
-    private boolean isSquareAttacked(
-            Position target,
-            Color attackingColor) {
-
-        for (int row = 0; row < 8; row++) {
-            for (int column = 0; column < 8; column++) {
-                Piece piece = squares[row][column].getPiece();
-
-                if (piece == null || piece.getColor() != attackingColor) {
-                    continue;
-                }
-
-                int rowDifference = target.getRow() - row;
-                int columnDifference = target.getColumn() - column;
-                int rowDistance = Math.abs(rowDifference);
-                int columnDistance = Math.abs(columnDifference);
-
-                PieceType type = piece.getPieceType();
-
-                if (type == PieceType.PAWN) {
-                    int direction =
-                            attackingColor == Color.WHITE ? 1 : -1;
-
-                    if (rowDifference == direction
-                            && columnDistance == 1) {
-                        return true;
-                    }
-                } else if (type == PieceType.KNIGHT
-                        && rowDistance * columnDistance == 2) {
-                    return true;
-                } else if (type == PieceType.KING
-                        && Math.max(rowDistance, columnDistance) == 1) {
-                    return true;
-                } else {
-                    boolean straight =
-                            rowDifference == 0 || columnDifference == 0;
-                    boolean diagonal =
-                            rowDistance == columnDistance;
-
-                    boolean matchingDirection =
-                            (type == PieceType.ROOK && straight)
-                                    || (type == PieceType.BISHOP && diagonal)
-                                    || (type == PieceType.QUEEN
-                                    && (straight || diagonal));
-
-                    if (matchingDirection
-                            && pathIsClear(row, column, target)) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private boolean pathIsClear(
-            int startRow,
-            int startColumn,
-            Position target) {
-
-        int rowStep =
-                Integer.signum(target.getRow() - startRow);
-        int columnStep =
-                Integer.signum(target.getColumn() - startColumn);
-
-        int row = startRow + rowStep;
-        int column = startColumn + columnStep;
-
-        while (row != target.getRow()
-                || column != target.getColumn()) {
-
-            if (!squares[row][column].isEmpty()) {
-                return false;
-            }
-
-            row += rowStep;
-            column += columnStep;
-        }
-
-        return true;
+        return checkRule.isKingInCheck(this, kingColor);
     }
 }

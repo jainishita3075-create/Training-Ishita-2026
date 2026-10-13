@@ -2,7 +2,6 @@ package com.example.ChessGame.controller;
 
 import com.example.ChessGame.dto.GameStateResponse;
 import com.example.ChessGame.dto.MoveRequest;
-import com.example.ChessGame.dto.ResignRequest;
 import com.example.ChessGame.model.Entity.Board;
 import com.example.ChessGame.model.Entity.Game;
 import com.example.ChessGame.model.Entity.Move;
@@ -14,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.security.Principal;
 
 @RestController
 @RequestMapping("/api/games")
@@ -28,22 +28,25 @@ public class GameController {
     @PostMapping("/{gameId}/moves")
     public GameStateResponse makeMove(
             @PathVariable String gameId,
-            @RequestBody MoveRequest request) {
+            @RequestBody MoveRequest request,
+            Principal principal) {
 
         gameService.makeMove(
                 gameId,
-                request.getPlayerName(),
+                principal.getName(),
                 request.getFrom(),
                 request.getTo(),
                 request.getPromotion()
         );
 
-        return getGame(gameId);
+        return getGame(gameId, principal);
     }
 
     @GetMapping("/{gameId}")
-    public GameStateResponse getGame(@PathVariable String gameId) {
-        Game game = gameService.getGame(gameId);
+    public GameStateResponse getGame(
+            @PathVariable String gameId,
+            Principal principal) {
+        Game game = gameService.getGame(gameId, principal.getName());
 
         return new GameStateResponse(
                 game.getId(),
@@ -51,6 +54,8 @@ public class GameController {
                 game.getBlackPlayer().getName(),
                 game.getWhitePlayer().getEloRating(),
                 game.getBlackPlayer().getEloRating(),
+                game.getWhitePlayer().getCapturedPiecePoints(),
+                game.getBlackPlayer().getCapturedPiecePoints(),
                 game.getCurrentTurn().toString(),
                 game.getStatus().toString(),
                 createBoardView(game.getBoard()),
@@ -61,16 +66,23 @@ public class GameController {
     @PostMapping("/{gameId}/resign")
     public GameStateResponse resign(
             @PathVariable String gameId,
-            @RequestBody ResignRequest request) {
+            Principal principal) {
 
-        gameService.resignGame(gameId, request.getPlayerName());
-        return getGame(gameId);
+        gameService.resignGame(gameId, principal.getName());
+        return getGame(gameId, principal);
+    }
+
+    @PostMapping("/{gameId}/undo")
+    public GameStateResponse undo(
+            @PathVariable String gameId,
+            Principal principal) {
+        gameService.undoLastMove(gameId, principal.getName());
+        return getGame(gameId, principal);
     }
 
     private List<List<String>> createBoardView(Board board) {
         List<List<String>> rows = new ArrayList<>();
 
-        // Return rank 8 first, followed by rank 1.
         for (int row = 7; row >= 0; row--) {
             List<String> columns = new ArrayList<>();
 

@@ -10,6 +10,7 @@ import com.example.ChessGame.model.Enum.GameStatus;
 import com.example.ChessGame.model.Enum.MoveType;
 import com.example.ChessGame.model.Enum.PieceType;
 import com.example.ChessGame.repo.GameRepo;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
@@ -22,28 +23,32 @@ import java.util.UUID;
 public class GameService {
 
     private final GameRepo gameRepository;
+    private final AccountService accountService;
     private final PieceFactory pieceFactory = new PieceFactory();
 
-    // Key: matchmaking ticket ID, value: waiting player
     private final Map<String, Player> waitingPlayers = new HashMap<>();
-
-    // Key: matchmaking ticket ID, value: created game ID
     private final Map<String, String> matchedGames = new HashMap<>();
+    private final Map<String, String> ticketOwners = new HashMap<>();
 
-    public GameService(GameRepo gameRepository) {
+    @Autowired
+    public GameService(GameRepo gameRepository, AccountService accountService) {
         this.gameRepository = gameRepository;
+        this.accountService = accountService;
     }
 
-    /**
-     * Adds a player to matchmaking.
-     * Returns a ticket ID that the player can use to check match status.
-     */
+    // Keeps simple service construction available for unit tests.
+    public GameService(GameRepo gameRepository) {
+        this.gameRepository = gameRepository;
+        this.accountService = null;
+    }
+
     public String joinMatchmaking(Player player) {
         if (player == null) {
             throw new IllegalArgumentException("Player is required.");
         }
 
         String ticketId = UUID.randomUUID().toString();
+        ticketOwners.put(ticketId, player.getName());
 
         Optional<Map.Entry<String, Player>> opponent =
                 waitingPlayers.entrySet()
@@ -83,11 +88,28 @@ public class GameService {
         return Optional.ofNullable(matchedGames.get(ticketId));
     }
 
+    public Optional<String> getMatchedGameId(
+            String ticketId,
+            String playerName) {
+        String owner = ticketOwners.get(ticketId);
+        if (owner == null || !owner.equalsIgnoreCase(playerName)) {
+            throw new IllegalArgumentException(
+                    "This matchmaking ticket does not belong to you.");
+        }
+        return getMatchedGameId(ticketId);
+    }
+
     public Game getGame(String gameId) {
         return gameRepository.findById(gameId)
                 .orElseThrow(() ->
                         new IllegalArgumentException(
                                 "Game not found: " + gameId));
+    }
+
+    public Game getGame(String gameId, String playerName) {
+        Game game = getGame(gameId);
+        findPlayer(game, playerName);
+        return game;
     }
 
     private int getRatingGroup(int rating) {
@@ -185,11 +207,13 @@ public class GameService {
                 promotionType
         );
 
+        var previousBoardState = game.getBoard().saveState();
+
         if (!game.getBoard().executeValidMove(move)) {
             throw new IllegalArgumentException("That move is not allowed.");
         }
 
-        game.recordMove(move);
+        game.recordMove(move, previousBoardState);
 
         Color nextTurn = game.getCurrentTurn();
         boolean nextPlayerIsInCheck =
@@ -308,5 +332,37 @@ public class GameService {
 
         whitePlayer.updateEloRating(ratingChange);
         blackPlayer.updateEloRating(-ratingChange);
+
+        if (accountService != null) {
+            accountService.saveRating(
+                    whitePlayer.getName(), whitePlayer.getEloRating());
+            accountService.saveRating(
+                    blackPlayer.getName(), blackPlayer.getEloRating());
+        }
+    }
+
+    public Game undoLastMove(String gameId, String playerName) {
+        Game game = getGame(gameId);
+
+        if (game.getStatus() != GameStatus.IN_PROGRESS
+                && game.getStatus() != GameStatus.CHECK) {
+            throw new IllegalStateException(
+                    "A move cannot be undone after the game has ended.");
+        }
+
+        Player player = findPlayer(game, playerName);
+
+        if (game.getMoves().isEmpty()) {
+            throw new IllegalStateException("There are no moves to undo.");
+        }
+
+        Move lastMove = game.getMoves().get(game.getMoves().size() - 1);
+        if (lastMove.getPiece().getColor() != player.getColor()) {
+            throw new IllegalArgumentException(
+                    "Only the player who made the last move can undo it.");
+        }
+
+        game.undoLastMove();
+        return gameRepository.save(game);
     }
 }

@@ -11,10 +11,23 @@ const PIECES = {
 const FILES = "abcdefgh";
 const TERMINAL_STATUSES = ["CHECKMATE", "STALEMATE", "DRAW", "RESIGNED"];
 
-async function requestApi(url, options) {
+function authorizationHeader(credentials) {
+  if (!credentials) return {};
+  const bytes = new TextEncoder().encode(
+    `${credentials.username}:${credentials.password}`
+  );
+  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+  return { Authorization: `Basic ${btoa(binary)}` };
+}
+
+async function requestApi(url, options, credentials) {
   const response = await fetch(url, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...authorizationHeader(credentials),
+      ...options?.headers,
+    },
   });
   const body = await response.json().catch(() => null);
   if (!response.ok) {
@@ -39,8 +52,11 @@ function ratingLabel(rating) {
 
 export default function Home() {
   const [mode, setMode] = useState("home");
+  const [accountMode, setAccountMode] = useState("register");
   const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
   const [rating, setRating] = useState("1200");
+  const [credentials, setCredentials] = useState(null);
   const [playerName, setPlayerName] = useState("");
   const [ticketId, setTicketId] = useState("");
   const [game, setGame] = useState(null);
@@ -55,9 +71,13 @@ export default function Home() {
 
     const checkMatch = async () => {
       try {
-        const result = await requestApi(`/api/matchmaking/${ticketId}`);
+        const result = await requestApi(
+          `/api/matchmaking/${ticketId}`, undefined, credentials
+        );
         if (result.matched && result.gameId) {
-          const state = await requestApi(`/api/games/${result.gameId}`);
+          const state = await requestApi(
+            `/api/games/${result.gameId}`, undefined, credentials
+          );
           setGame(state);
           setMode("game");
           setError("");
@@ -69,7 +89,7 @@ export default function Home() {
 
     const timer = setInterval(checkMatch, 2000);
     return () => clearInterval(timer);
-  }, [mode, ticketId]);
+  }, [mode, ticketId, credentials]);
 
   useEffect(() => {
     if (mode !== "game" || !game?.gameId) return undefined;
@@ -77,7 +97,9 @@ export default function Home() {
     const refreshGame = async () => {
       if (requestInFlight.current || document.hidden) return;
       try {
-        const latest = await requestApi(`/api/games/${game.gameId}`);
+        const latest = await requestApi(
+          `/api/games/${game.gameId}`, undefined, credentials
+        );
         setGame(latest);
       } catch (e) {
         setError(e.message || "Could not refresh the game.");
@@ -86,7 +108,7 @@ export default function Home() {
 
     const timer = setInterval(refreshGame, 2000);
     return () => clearInterval(timer);
-  }, [mode, game?.gameId]);
+  }, [mode, game?.gameId, credentials]);
 
   async function joinMatchmaking(event) {
     event.preventDefault();
@@ -96,7 +118,12 @@ export default function Home() {
       setError("Enter your name to find a match.");
       return;
     }
-    if (!Number.isInteger(numericRating) || numericRating < 0) {
+    if (!password) {
+      setError("Enter your password.");
+      return;
+    }
+    if (accountMode === "register"
+        && (!Number.isInteger(numericRating) || numericRating < 0)) {
       setError("Enter a valid non-negative Elo rating.");
       return;
     }
@@ -104,14 +131,30 @@ export default function Home() {
     setBusy(true);
     setError("");
     try {
-      const result = await requestApi("/api/matchmaking/join", {
-        method: "POST",
-        body: JSON.stringify({ name: cleanName, eloRating: numericRating }),
-      });
-      setPlayerName(cleanName);
+      let accountName = cleanName.toLowerCase();
+      if (accountMode === "register") {
+        const account = await requestApi("/api/auth/register", {
+          method: "POST",
+          body: JSON.stringify({
+            name: cleanName,
+            password,
+            eloRating: numericRating,
+          }),
+        });
+        accountName = account.name;
+      }
+
+      const auth = { username: accountName, password };
+      const result = await requestApi(
+        "/api/matchmaking/join", { method: "POST" }, auth
+      );
+      setCredentials(auth);
+      setPlayerName(accountName);
       setTicketId(result.ticketId || "");
       if (result.matched && result.gameId) {
-        const state = await requestApi(`/api/games/${result.gameId}`);
+        const state = await requestApi(
+          `/api/games/${result.gameId}`, undefined, auth
+        );
         setGame(state);
         setMode("game");
       } else if (result.ticketId) {
@@ -138,12 +181,11 @@ export default function Home() {
       const updated = await requestApi(`/api/games/${game.gameId}/moves`, {
         method: "POST",
         body: JSON.stringify({
-          playerName,
           from: squareName(from.row, from.column),
           to: squareName(to.row, to.column),
           promotion: isPromotion ? promotion : null,
         }),
-      });
+      }, credentials);
       setGame(updated);
       setSelected(null);
     } catch (e) {
@@ -162,12 +204,30 @@ export default function Home() {
     try {
       const updated = await requestApi(`/api/games/${game.gameId}/resign`, {
         method: "POST",
-        body: JSON.stringify({ playerName }),
-      });
+      }, credentials);
       setGame(updated);
       setSelected(null);
     } catch (e) {
       setError(e.message || "Could not resign the game.");
+    } finally {
+      requestInFlight.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function undoLastMove() {
+    if (!game || requestInFlight.current) return;
+    requestInFlight.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await requestApi(`/api/games/${game.gameId}/undo`, {
+        method: "POST",
+      }, credentials);
+      setGame(updated);
+      setSelected(null);
+    } catch (e) {
+      setError(e.message || "Could not undo the last move.");
     } finally {
       requestInFlight.current = false;
       setBusy(false);
@@ -228,19 +288,24 @@ export default function Home() {
           </div>
           <form className={styles.joinCard} onSubmit={joinMatchmaking}>
             <div className={styles.cardIcon}>♟</div>
-            <h2>Find your match</h2>
-            <p className={styles.cardSub}>Enter your details and we’ll find a player near your level.</p>
-            <label htmlFor="player-name">Player name</label>
-            <input id="player-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Alex" maxLength={40} autoComplete="nickname" />
-            <div className={styles.labelRow}>
-              <label htmlFor="elo-rating">Elo rating</label>
-              <span>{ratingLabel(Number(rating) || 0)}</span>
-            </div>
-            <input id="elo-rating" type="number" min="0" max="4000" step="1" value={rating} onChange={(event) => setRating(event.target.value)} />
-            <div className={styles.ratingHint}>Under 800 · 800–1200 · 1200–1600 · 1600–2000 · 2000–2200 · 2200–2500 · 2500+</div>
+            <h2>{accountMode === "register" ? "Create your account" : "Welcome back"}</h2>
+            <p className={styles.cardSub}>Sign in securely, then find a player near your Elo level.</p>
+            <label htmlFor="player-name">Username</label>
+            <input id="player-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="3–20 letters or numbers" maxLength={20} autoComplete="username" />
+            <label htmlFor="player-password">Password</label>
+            <input id="player-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} autoComplete={accountMode === "register" ? "new-password" : "current-password"} />
+            {accountMode === "register" && <>
+              <div className={styles.labelRow}>
+                <label htmlFor="elo-rating">Starting Elo</label>
+                <span>{ratingLabel(Number(rating) || 0)}</span>
+              </div>
+              <input id="elo-rating" type="number" min="0" max="4000" step="1" value={rating} onChange={(event) => setRating(event.target.value)} />
+            </>}
             {error && <p className={styles.error} role="alert">{error}</p>}
-            <button className={styles.primaryButton} type="submit" disabled={busy}>{busy ? "Finding a match…" : "Find an opponent"}<span>→</span></button>
-            <p className={styles.smallNote}>No account needed to play</p>
+            <button className={styles.primaryButton} type="submit" disabled={busy}>{busy ? "Please wait…" : accountMode === "register" ? "Create account & find match" : "Sign in & find match"}<span>→</span></button>
+            <button className={styles.textButton} type="button" onClick={() => { setAccountMode(accountMode === "register" ? "login" : "register"); setError(""); }}>
+              {accountMode === "register" ? "Already registered? Sign in" : "New here? Create an account"}
+            </button>
           </form>
         </section>
       )}
@@ -251,7 +316,7 @@ export default function Home() {
           <p className={styles.eyebrow}>MATCHMAKING</p>
           <h1>Looking for your opponent</h1>
           <p>Finding a player in your Elo group. This page will update when they join.</p>
-          <div className={styles.queuePlayer}><span className={styles.avatar}>{playerName.slice(0, 1).toUpperCase()}</span><div><strong>{playerName}</strong><small>{rating} Elo · {ratingLabel(Number(rating) || 0)}</small></div><span className={styles.waitingBadge}>WAITING</span></div>
+          <div className={styles.queuePlayer}><span className={styles.avatar}>{playerName.slice(0, 1).toUpperCase()}</span><div><strong>{playerName}</strong><small>Using your account Elo for pairing</small></div><span className={styles.waitingBadge}>WAITING</span></div>
           {error && <p className={styles.error} role="alert">{error}</p>}
           <p className={styles.queueNote}>Returning to the form stops this screen from checking; your server-side ticket may still match because the backend has no cancel endpoint yet.</p>
           <button className={styles.textButton} onClick={() => { setMode("home"); setTicketId(""); setError(""); }}>Return to form</button>
@@ -318,7 +383,10 @@ export default function Home() {
               <div className={styles.detailRow}><span>Game ID</span><strong title={game.gameId}>{game.gameId.slice(0, 8)}…</strong></div>
               <div className={styles.detailRow}><span>You are</span><strong>{myColor === "WHITE" ? "White" : "Black"}</strong></div>
               <div className={styles.detailRow}><span>Game status</span><strong>{game.status.replaceAll("_", " ")}</strong></div>
-              {!gameOver && <button className={styles.resignButton} onClick={resignGame} disabled={busy}>Resign game</button>}
+              {!gameOver && <>
+                <button className={styles.resignButton} onClick={undoLastMove} disabled={busy || !game.moveHistory?.length}>Undo last move</button>
+                <button className={styles.resignButton} onClick={resignGame} disabled={busy}>Resign game</button>
+              </>}
             </div>
             <button className={styles.leaveButton} onClick={() => { setMode("home"); setGame(null); setTicketId(""); setSelected(null); setError(""); }}>Back to home</button>
           </aside>

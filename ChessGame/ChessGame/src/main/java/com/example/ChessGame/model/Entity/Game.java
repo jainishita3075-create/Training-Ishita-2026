@@ -18,6 +18,8 @@ public class Game {
     private final Player blackPlayer;
     private final Board board = new Board();
     private final List<Move> moves = new ArrayList<>();
+    private final List<Board.BoardState> previousBoardStates = new ArrayList<>();
+    private final List<GameStatus> previousStatuses = new ArrayList<>();
 
     private Color currentTurn = Color.WHITE;
     private GameStatus status = GameStatus.IN_PROGRESS;
@@ -38,12 +40,43 @@ public class Game {
         }
     }
 
-    public void recordMove(Move move) {
+    public void recordMove(Move move, Board.BoardState previousBoardState) {
         moves.add(move);
+        previousBoardStates.add(previousBoardState);
+        previousStatuses.add(status);
+        if (move.getCapturedPiece() != null) {
+            getPlayer(move.getPiece().getColor()).addCapturedPiecePoints(
+                    move.getCapturedPiece().getPointValue());
+        }
         currentTurn = currentTurn == Color.WHITE ? Color.BLACK : Color.WHITE;
     }
 
     public void finish(GameStatus finalStatus) {
         status = finalStatus;
+    }
+
+    public void undoLastMove() {
+        if (moves.isEmpty()) {
+            throw new IllegalStateException("There are no moves to undo.");
+        }
+
+        int lastIndex = moves.size() - 1;
+        Move lastMove = moves.remove(lastIndex);
+        Board.BoardState previousBoardState =
+                previousBoardStates.remove(lastIndex);
+
+        board.restoreState(previousBoardState);
+
+        if (lastMove.getCapturedPiece() != null) {
+            getPlayer(lastMove.getPiece().getColor()).removeCapturedPiecePoints(
+                    lastMove.getCapturedPiece().getPointValue());
+        }
+
+        currentTurn = lastMove.getPiece().getColor();
+        status = previousStatuses.remove(lastIndex);
+    }
+
+    private Player getPlayer(Color color) {
+        return color == Color.WHITE ? whitePlayer : blackPlayer;
     }
 }

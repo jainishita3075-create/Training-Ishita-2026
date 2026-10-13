@@ -1,58 +1,37 @@
 package com.example.ChessGame.controller;
 
-import com.example.ChessGame.dto.JoinMatchRequest;
 import com.example.ChessGame.dto.MatchMakingResponse;
 import com.example.ChessGame.model.Entity.Player;
+import com.example.ChessGame.service.AccountService;
 import com.example.ChessGame.service.GameService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/matchmaking")
 public class MatchMakingController {
     private final GameService gameService;
+    private final AccountService accountService;
 
-    public MatchMakingController(GameService gameService) {
+    public MatchMakingController(
+            GameService gameService,
+            AccountService accountService) {
         this.gameService = gameService;
+        this.accountService = accountService;
     }
 
     @PostMapping("/join")
-    public ResponseEntity<MatchMakingResponse> join(
-            @RequestBody JoinMatchRequest request) {
-
-        if (request.getName() == null || request.getName().isBlank()) {
-            return ResponseEntity.badRequest().body(
-                    new MatchMakingResponse(
-                            false,
-                            "Player name is required.",
-                            null,
-                            null
-                    )
-            );
-        }
-
-        if (request.getEloRating() < 0) {
-            return ResponseEntity.badRequest().body(
-                    new MatchMakingResponse(
-                            false,
-                            "Elo rating cannot be negative.",
-                            null,
-                            null
-                    )
-            );
-        }
-
-        Player player = new Player(
-                request.getName(),
-                request.getEloRating()
-        );
+    public ResponseEntity<MatchMakingResponse> join(Principal principal) {
+        String playerName = principal.getName();
+        Player player = accountService.createPlayer(playerName);
 
         String ticketId = gameService.joinMatchmaking(player);
 
         Optional<String> gameId =
-                gameService.getMatchedGameId(ticketId);
+                gameService.getMatchedGameId(ticketId, playerName);
 
         if (gameId.isPresent()) {
             return ResponseEntity.ok(new MatchMakingResponse(
@@ -73,10 +52,11 @@ public class MatchMakingController {
 
     @GetMapping("/{ticketId}")
     public ResponseEntity<MatchMakingResponse> checkMatch(
-            @PathVariable String ticketId) {
+            @PathVariable String ticketId,
+            Principal principal) {
 
         Optional<String> gameId =
-                gameService.getMatchedGameId(ticketId);
+                gameService.getMatchedGameId(ticketId, principal.getName());
 
         if (gameId.isPresent()) {
             return ResponseEntity.ok(new MatchMakingResponse(

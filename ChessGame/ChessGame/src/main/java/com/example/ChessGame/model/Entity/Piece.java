@@ -2,15 +2,16 @@ package com.example.ChessGame.model.Entity;
 
 import com.example.ChessGame.model.Enum.Color;
 import com.example.ChessGame.model.Enum.PieceType;
+import com.example.ChessGame.model.rules.PieceMovementRule;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Getter
 @RequiredArgsConstructor
 public abstract class Piece {
+    private static final PieceMovementRule MOVEMENT_RULE = new PieceMovementRule();
     protected final Color color;
     protected final PieceType pieceType;
 
@@ -18,8 +19,13 @@ public abstract class Piece {
         return targetPiece != null && targetPiece.getColor() != this.color;
 //  checks if the piece is captured or not and if piece is of opponent or not
     }
-    public abstract boolean isValidMove(Board board, Position from, Position to);
-    public abstract List<Position> getAvailableMoves(Board board, Position from);
+    public boolean isValidMove(Board board, Position from, Position to) {
+        return getAvailableMoves(board, from).contains(to);
+    }
+
+    public List<Position> getAvailableMoves(Board board, Position from) {
+        return MOVEMENT_RULE.getMoves(board, this, from);
+    }
 
 //  score system
     public int getPointValue() {
@@ -32,37 +38,4 @@ public abstract class Piece {
         };
     }
 
-    protected List<Position> getSlidingMoves(
-            Board board,
-            Position from,
-            int[][] directions) {
-
-        List<Position> moves = new ArrayList<>();
-
-        for (int[] direction : directions) {
-            int row = from.getRow() + direction[0];
-            int column = from.getColumn() + direction[1];
-
-            while (row >= 0 && row < 8
-                    && column >= 0 && column < 8) {
-
-                Position next = new Position(row, column);
-                var square = board.getSquare(next);
-
-                if (square.isEmpty()) {
-                    moves.add(next);
-                } else {
-                    if (isCapture(square.getPiece())) {
-                        moves.add(next);
-                    }
-                    break;
-                }
-
-                row += direction[0];
-                column += direction[1];
-            }
-        }
-
-        return moves;
-    }
 }

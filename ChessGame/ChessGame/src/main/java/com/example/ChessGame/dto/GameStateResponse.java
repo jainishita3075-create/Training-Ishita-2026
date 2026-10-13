@@ -13,6 +13,8 @@ public class GameStateResponse {
     private String blackPlayer;
     private int whiteElo;
     private int blackElo;
+    private int whiteCapturedPoints;
+    private int blackCapturedPoints;
     private String currentTurn;
     private String status;
     private List<List<String>> board;
