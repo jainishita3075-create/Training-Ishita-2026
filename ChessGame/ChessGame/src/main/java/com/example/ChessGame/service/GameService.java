@@ -100,10 +100,20 @@ public class GameService {
     }
 
     public Game getGame(String gameId) {
-        return gameRepository.findById(gameId)
+        Game game = gameRepository.findById(gameId)
                 .orElseThrow(() ->
                         new IllegalArgumentException(
                                 "Game not found: " + gameId));
+        Color timedOutPlayer = game.updateClock();
+        if (timedOutPlayer != null) {
+            updateRatings(
+                    game.getWhitePlayer(),
+                    game.getBlackPlayer(),
+                    timedOutPlayer == Color.WHITE ? 0.0 : 1.0
+            );
+            gameRepository.save(game);
+        }
+        return game;
     }
 
     public Game getGame(String gameId, String playerName) {
@@ -213,7 +223,15 @@ public class GameService {
             throw new IllegalArgumentException("That move is not allowed.");
         }
 
-        game.recordMove(move, previousBoardState);
+        Color timedOutPlayer = game.recordMove(move, previousBoardState);
+        if (timedOutPlayer != null) {
+            updateRatings(
+                    game.getWhitePlayer(),
+                    game.getBlackPlayer(),
+                    timedOutPlayer == Color.WHITE ? 0.0 : 1.0
+            );
+            return gameRepository.save(game);
+        }
 
         Color nextTurn = game.getCurrentTurn();
         boolean nextPlayerIsInCheck =
@@ -249,7 +267,8 @@ public class GameService {
 
     private PieceType parsePromotionType(String promotionText) {
         if (promotionText == null || promotionText.isBlank()) {
-            return PieceType.QUEEN;
+            throw new IllegalArgumentException(
+                    "Choose a piece for pawn promotion.");
         }
 
         return switch (promotionText.trim().toLowerCase()) {

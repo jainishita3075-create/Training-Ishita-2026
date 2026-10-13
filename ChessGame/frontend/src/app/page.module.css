@@ -71,6 +71,8 @@
 .playerInfo { display: grid; gap: 3px; min-width: 0; }
 .playerInfo strong { overflow: hidden; color: #343a32; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .playerInfo small { color: var(--muted); font-size: 9px; }
+.clock { margin-left: auto; padding: 6px 8px; border-radius: 4px; background: #f0efe8; color: #30392f; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
+.activePlayer .clock { background: #e9efe4; color: #344638; }
 .activeLabel { margin-left: auto; color: var(--green); font-size: 8px; font-weight: 800; letter-spacing: .08em; white-space: nowrap; }
 .vs { color: #a1a399; font-size: 8px; font-weight: 800; letter-spacing: .1em; }
 .boardFrame { width: min(100%, 680px); margin: 0 auto; display: grid; grid-template-columns: 19px 1fr; gap: 5px; }
@@ -91,8 +93,12 @@
 .darkCoordinate { color: #75876c; }
 .lightCoordinate { color: #e8e4d5; }
 .boardFooter { width: min(100%, 680px); margin: 13px auto 0; display: flex; align-items: center; justify-content: space-between; gap: 15px; color: var(--muted); font-size: 10px; }
-.promotionControl { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
-.promotionControl select { padding: 5px 7px; border: 1px solid #deded4; border-radius: 4px; color: var(--ink); background: #fffefa; font: inherit; font-size: 10px; }
+.promotionDialog { width: min(100%, 680px); margin: 14px auto 0; padding: 14px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; border: 1px solid #d7dfd1; border-radius: 6px; background: #fffefa; color: var(--ink); font-size: 11px; }
+.promotionDialog strong { width: 100%; font-size: 12px; }
+.promotionDialog select, .promotionDialog button { min-height: 34px; padding: 0 10px; border: 1px solid #d9ddd3; border-radius: 4px; background: white; color: var(--ink); font: inherit; }
+.promotionDialog button { border-color: var(--deep-green); background: var(--deep-green); color: white; cursor: pointer; }
+.promotionDialog button:disabled { opacity: .55; cursor: wait; }
+.promotionDialog .cancelPromotion { border-color: transparent; background: transparent; color: var(--muted); text-decoration: underline; }
 .sidebar { padding-top: 48px; display: grid; gap: 13px; }
 .sidePanel { padding: 18px; border: 1px solid var(--line); border-radius: 7px; background: #fffefa; }
 .sidePanel h2 { margin: 0; font-family: Georgia, serif; font-size: 17px; font-weight: 400; }
@@ -139,6 +145,7 @@
   .playerStone { width: 17px; height: 17px; }
   .playerInfo strong { max-width: 82px; font-size: 10px; }
   .activeLabel { font-size: 7px; }
+  .clock { padding: 5px 6px; font-size: 11px; }
   .piece { font-size: clamp(29px, 9vw, 46px); }
   .boardFrame { grid-template-columns: 15px 1fr; gap: 3px; }
   .coordinate, .fileCoordinate { font-size: 7px; }

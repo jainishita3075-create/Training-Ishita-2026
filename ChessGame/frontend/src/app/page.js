@@ -9,7 +9,7 @@ const PIECES = {
   k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟",
 };
 const FILES = "abcdefgh";
-const TERMINAL_STATUSES = ["CHECKMATE", "STALEMATE", "DRAW", "RESIGNED"];
+const TERMINAL_STATUSES = ["CHECKMATE", "STALEMATE", "DRAW", "RESIGNED", "WHITE_TIMEOUT", "BLACK_TIMEOUT"];
 
 function authorizationHeader(credentials) {
   if (!credentials) return {};
@@ -46,6 +46,11 @@ function squareName(boardRow, column) {
   return `${FILES[column]}${8 - boardRow}`;
 }
 
+function formatClock(milliseconds) {
+  const seconds = Math.ceil(Math.max(0, milliseconds) / 1000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 function ratingLabel(rating) {
   if (rating < 800) return "Learning";
   if (rating < 1200) return "Casual";
@@ -68,9 +73,27 @@ export default function Home() {
   const [game, setGame] = useState(null);
   const [selected, setSelected] = useState(null);
   const [promotion, setPromotion] = useState("q");
+  const [pendingPromotion, setPendingPromotion] = useState(null);
+  const [clockNow, setClockNow] = useState(0);
+  const [clockBaselineAt, setClockBaselineAt] = useState(0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const requestInFlight = useRef(false);
+
+  useEffect(() => {
+    const updateClockDisplay = () => setClockNow(Date.now());
+    updateClockDisplay();
+    const timer = setInterval(updateClockDisplay, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (game?.clockUpdatedAtMillis) {
+      const now = Date.now();
+      setClockBaselineAt(now);
+      setClockNow(now);
+    }
+  }, [game?.clockUpdatedAtMillis]);
 
   useEffect(() => {
     if (mode !== "queue" || !ticketId) return undefined;
@@ -134,8 +157,8 @@ export default function Home() {
       };
     }
 
-    // Keep a slower HTTP fallback in case the WebSocket disconnects.
-    const timer = setInterval(refreshGame, 10000);
+    // Refresh if the WebSocket disconnects and confirm a clock timeout promptly.
+    const timer = setInterval(refreshGame, 2000);
     return () => {
       clearInterval(timer);
       socket?.close();
@@ -201,7 +224,7 @@ export default function Home() {
     }
   }
 
-  async function sendMove(from, to) {
+  async function sendMove(from, to, promotionChoice = null) {
     if (!game || requestInFlight.current) return;
     requestInFlight.current = true;
     setBusy(true);
@@ -215,11 +238,12 @@ export default function Home() {
         body: JSON.stringify({
           from: squareName(from.row, from.column),
           to: squareName(to.row, to.column),
-          promotion: isPromotion ? promotion : null,
+          promotion: isPromotion ? promotionChoice : null,
         }),
       }, credentials);
       setGame(updated);
       setSelected(null);
+      setPendingPromotion(null);
     } catch (e) {
       setError(e.message || "That move could not be made.");
     } finally {
@@ -267,7 +291,7 @@ export default function Home() {
   }
 
   function clickSquare(row, column) {
-    if (!game || !myTurn || busy || gameOver) return;
+    if (!game || !myTurn || busy || gameOver || pendingPromotion) return;
     const piece = game.board?.[row]?.[column] || "";
     const isMine = myColor === "WHITE" ? piece !== "" && piece === piece.toUpperCase() : piece !== "" && piece === piece.toLowerCase();
 
@@ -283,6 +307,14 @@ export default function Home() {
       setSelected({ row, column });
       return;
     }
+    const movingPiece = game.board?.[selected.row]?.[selected.column] || "";
+    const isPromotion = (movingPiece === "P" && row === 0)
+      || (movingPiece === "p" && row === 7);
+    if (isPromotion) {
+      setPromotion("q");
+      setPendingPromotion({ from: selected, to: { row, column } });
+      return;
+    }
     sendMove(selected, { row, column });
   }
 
@@ -293,11 +325,23 @@ export default function Home() {
     : null;
   const myTurn = Boolean(game && game.currentTurn === myColor);
   const gameOver = Boolean(game && TERMINAL_STATUSES.includes(game.status));
-  const statusText = gameOver
-    ? game.status.replaceAll("_", " ").toLowerCase()
+  const statusText = game?.status === "WHITE_TIMEOUT"
+    ? "white ran out of time"
+    : game?.status === "BLACK_TIMEOUT"
+      ? "black ran out of time"
+      : gameOver
+        ? game.status.replaceAll("_", " ").toLowerCase()
     : game?.status === "CHECK"
       ? `${game.currentTurn.toLowerCase()} is in check`
       : `${game?.currentTurn?.toLowerCase() || "white"} to move`;
+  const whiteTime = game
+    ? game.whiteTimeMillis - (game.currentTurn === "WHITE" && !gameOver
+      ? Math.max(0, clockNow - clockBaselineAt) : 0)
+    : 0;
+  const blackTime = game
+    ? game.blackTimeMillis - (game.currentTurn === "BLACK" && !gameOver
+      ? Math.max(0, clockNow - clockBaselineAt) : 0)
+    : 0;
 
   return (
     <main className={styles.page}>
@@ -363,9 +407,9 @@ export default function Home() {
               <span className={`${styles.turnBadge} ${gameOver ? styles.endedBadge : ""}`}><span />{statusText}</span>
             </div>
             <div className={styles.playerStrip}>
-              <PlayerCard name={blackPlayer} elo={game.blackElo} color="black" active={game.currentTurn === "BLACK" && !gameOver} />
+              <PlayerCard name={blackPlayer} elo={game.blackElo} time={formatClock(blackTime)} color="black" active={game.currentTurn === "BLACK" && !gameOver} />
               <div className={styles.vs}>VS</div>
-              <PlayerCard name={whitePlayer} elo={game.whiteElo} color="white" active={game.currentTurn === "WHITE" && !gameOver} />
+              <PlayerCard name={whitePlayer} elo={game.whiteElo} time={formatClock(whiteTime)} color="white" active={game.currentTurn === "WHITE" && !gameOver} />
             </div>
             <div className={styles.boardFrame}>
               <div className={styles.rankLabels}>{[8, 7, 6, 5, 4, 3, 2, 1].map((rank) => <span key={rank}>{rank}</span>)}</div>
@@ -377,7 +421,7 @@ export default function Home() {
                     className={`${styles.square} ${light ? styles.lightSquare : styles.darkSquare} ${isSelected ? styles.selectedSquare : ""}`}
                     key={`${rowIndex}-${columnIndex}`}
                     onClick={() => clickSquare(rowIndex, columnIndex)}
-                    disabled={!myTurn || busy || gameOver}
+                    disabled={!myTurn || busy || gameOver || Boolean(pendingPromotion)}
                     aria-label={`${squareName(rowIndex, columnIndex)} ${piece ? `${piece === piece.toUpperCase() ? "white" : "black"} ${piece.toUpperCase()}` : "empty"}`}
                     role="gridcell"
                   >
@@ -390,12 +434,16 @@ export default function Home() {
             </div>
             <div className={styles.boardFooter}>
               <span>{myTurn ? "Your turn — select one of your pieces." : gameOver ? "This game has ended." : "Waiting for the other player to move."}</span>
-              <label className={styles.promotionControl}>Promotion
-                <select value={promotion} onChange={(event) => setPromotion(event.target.value)}>
-                  <option value="q">Queen</option><option value="r">Rook</option><option value="b">Bishop</option><option value="n">Knight</option>
-                </select>
-              </label>
             </div>
+            {pendingPromotion && <div className={styles.promotionDialog} role="dialog" aria-label="Choose promotion piece">
+              <strong>Your pawn reached the last rank.</strong>
+              <label htmlFor="promotion-choice">Promote it to</label>
+              <select id="promotion-choice" value={promotion} onChange={(event) => setPromotion(event.target.value)}>
+                <option value="q">Queen</option><option value="r">Rook</option><option value="b">Bishop</option><option value="n">Knight</option>
+              </select>
+              <button onClick={() => sendMove(pendingPromotion.from, pendingPromotion.to, promotion)} disabled={busy}>Promote and move</button>
+              <button className={styles.cancelPromotion} onClick={() => { setPendingPromotion(null); setSelected(null); }}>Cancel</button>
+            </div>}
             {error && <p className={styles.error} role="alert">{error}</p>}
           </div>
 
@@ -420,7 +468,7 @@ export default function Home() {
                 <button className={styles.resignButton} onClick={resignGame} disabled={busy}>Resign game</button>
               </>}
             </div>
-            <button className={styles.leaveButton} onClick={() => { setMode("home"); setGame(null); setTicketId(""); setSelected(null); setError(""); }}>Back to home</button>
+            <button className={styles.leaveButton} onClick={() => { setMode("home"); setGame(null); setTicketId(""); setSelected(null); setPendingPromotion(null); setError(""); }}>Back to home</button>
           </aside>
         </section>
       )}
@@ -429,11 +477,12 @@ export default function Home() {
   );
 }
 
-function PlayerCard({ name, elo, color, active }) {
+function PlayerCard({ name, elo, time, color, active }) {
   return (
     <div className={`${styles.playerCard} ${active ? styles.activePlayer : ""}`}>
       <span className={`${styles.playerStone} ${color === "black" ? styles.blackStone : styles.whiteStone}`} />
       <div className={styles.playerInfo}><strong>{name}</strong><small>{elo} Elo</small></div>
+      <strong className={styles.clock}>{time}</strong>
       {active && <span className={styles.activeLabel}>TO MOVE</span>}
     </div>
   );

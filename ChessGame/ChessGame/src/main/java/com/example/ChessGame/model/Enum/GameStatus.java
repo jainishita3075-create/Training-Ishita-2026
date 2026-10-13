@@ -7,5 +7,7 @@ public enum GameStatus {
     CHECKMATE,
     STALEMATE,
     DRAW,
-    RESIGNED
+    RESIGNED,
+    WHITE_TIMEOUT,
+    BLACK_TIMEOUT
 }

@@ -64,6 +64,9 @@ public class GameController {
                 game.getBlackPlayer().getCapturedPiecePoints(),
                 game.getCurrentTurn().toString(),
                 game.getStatus().toString(),
+                game.getWhiteTimeMillis(),
+                game.getBlackTimeMillis(),
+                System.currentTimeMillis(),
                 createBoardView(game.getBoard()),
                 createMoveHistory(game.getMoves())
         );

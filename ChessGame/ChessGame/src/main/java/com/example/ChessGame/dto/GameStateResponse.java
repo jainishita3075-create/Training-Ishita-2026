@@ -17,6 +17,9 @@ public class GameStateResponse {
     private int blackCapturedPoints;
     private String currentTurn;
     private String status;
+    private long whiteTimeMillis;
+    private long blackTimeMillis;
+    private long clockUpdatedAtMillis;
     private List<List<String>> board;
     private List<String> moveHistory;
 }
