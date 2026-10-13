@@ -5,7 +5,7 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: "/api/:path*",
+        source: "BACKEND_URL",
         destination: "https://training-ishita-2026.onrender.com",
       },
     ];
