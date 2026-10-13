@@ -5,8 +5,8 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: "BACKEND_URL",
-        destination: "https://training-ishita-2026.onrender.com",
+        source: "/api/:path*",
+        destination: "${https://training-ishita-2026.onrender.com}/api/:path*",
       },
     ];
   },
