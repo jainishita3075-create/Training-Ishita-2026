@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const backendUrl = process.env.BACKEND_URL || "http://localhost:8080";
+
 const nextConfig = {
   cacheComponents: true,
   partialPrefetching: true,

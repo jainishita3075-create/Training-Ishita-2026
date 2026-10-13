@@ -9,6 +9,7 @@ import com.example.ChessGame.model.Entity.Piece;
 import com.example.ChessGame.model.Entity.Position;
 import com.example.ChessGame.model.Enum.Color;
 import com.example.ChessGame.service.GameService;
+import com.example.ChessGame.websocket.GameWebSocketHandler;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -20,9 +21,13 @@ import java.security.Principal;
 public class GameController {
 
     private final GameService gameService;
+    private final GameWebSocketHandler gameWebSocketHandler;
 
-    public GameController(GameService gameService) {
+    public GameController(
+            GameService gameService,
+            GameWebSocketHandler gameWebSocketHandler) {
         this.gameService = gameService;
+        this.gameWebSocketHandler = gameWebSocketHandler;
     }
 
     @PostMapping("/{gameId}/moves")
@@ -38,6 +43,7 @@ public class GameController {
                 request.getTo(),
                 request.getPromotion()
         );
+        gameWebSocketHandler.broadcastGameUpdate(gameId);
 
         return getGame(gameId, principal);
     }
@@ -69,6 +75,7 @@ public class GameController {
             Principal principal) {
 
         gameService.resignGame(gameId, principal.getName());
+        gameWebSocketHandler.broadcastGameUpdate(gameId);
         return getGame(gameId, principal);
     }
 
@@ -77,6 +84,7 @@ public class GameController {
             @PathVariable String gameId,
             Principal principal) {
         gameService.undoLastMove(gameId, principal.getName());
+        gameWebSocketHandler.broadcastGameUpdate(gameId);
         return getGame(gameId, principal);
     }
 

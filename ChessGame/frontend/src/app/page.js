@@ -20,6 +20,12 @@ function authorizationHeader(credentials) {
   return { Authorization: `Basic ${btoa(binary)}` };
 }
 
+function encodeSocketField(value) {
+  const bytes = new TextEncoder().encode(value || "");
+  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+  return btoa(binary);
+}
+
 async function requestApi(url, options, credentials) {
   const response = await fetch(url, {
     ...options,
@@ -106,8 +112,34 @@ export default function Home() {
       }
     };
 
-    const timer = setInterval(refreshGame, 2000);
-    return () => clearInterval(timer);
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL
+      || (window.location.hostname === "localhost"
+        ? "ws://localhost:8080/ws/game"
+        : "");
+    let socket;
+
+    if (wsUrl) {
+      socket = new WebSocket(wsUrl);
+      socket.onopen = () => {
+        socket.send("AUTH|" + encodeSocketField(game.gameId)
+          + "|" + encodeSocketField(credentials?.username)
+          + "|" + encodeSocketField(credentials?.password));
+      };
+      socket.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === "AUTHENTICATED"
+            || message.type === "GAME_UPDATED") {
+          refreshGame();
+        }
+      };
+    }
+
+    // Keep a slower HTTP fallback in case the WebSocket disconnects.
+    const timer = setInterval(refreshGame, 10000);
+    return () => {
+      clearInterval(timer);
+      socket?.close();
+    };
   }, [mode, game?.gameId, credentials]);
 
   async function joinMatchmaking(event) {
