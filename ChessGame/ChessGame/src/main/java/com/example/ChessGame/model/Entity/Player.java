@@ -17,6 +17,10 @@ public class Player {
         this.eloRating = eloRating;
     }
 
+     public void setColor(Color color) {
+        this.color = color;
+    }
+
     public void updateEloRating(int change) {
         this.eloRating = Math.max(0, this.eloRating + change);
     }
